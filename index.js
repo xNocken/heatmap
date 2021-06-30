@@ -7,17 +7,56 @@ const defaultConfig = {
   positions: [],
   squareSize: 5,
   radius: 20,
+  maxWeight: 5,
+  minWeight: 1,
+  debug: false,
+  colors: {
+    0: {
+      r: 0,
+      g: 255,
+      b: 255,
+      a: 0,
+    },
+    15: {
+      r: 0,
+      g: 255,
+      b: 255,
+      a: 0,
+    },
+    20: {
+      r: 0,
+      g: 255,
+      b: 255,
+      a: 165,
+    },
+    60: {
+      r: 0,
+      g: 0,
+      b: 255,
+      a: 165,
+    },
+    100: {
+      r: 255,
+      g: 0,
+      b: 0,
+      a: 165,
+    },
+  },
 }
 
 /**
- *
  * @param {number} val1
  * @param {number} val2
  * @param {number} percent
- * @returns
+ * @returns {number}
  */
 const getCenterBasedOnPercent = (val1, val2, percent) => ((val2 - val1) * percent) + val1;
 
+/**
+ * @param {Object} pos1
+ * @param {Object} pos2
+ * @returns {number}
+ */
 const get2DDistance = (pos1, pos2) => {
   const x = (pos1.x - pos2.x) ** 2;
   const y = (pos1.y - pos2.y) ** 2;
@@ -25,89 +64,61 @@ const get2DDistance = (pos1, pos2) => {
   return Math.sqrt(x + y);
 };
 
-const colors = Object.entries({
-  0: {
-    r: 255,
-    g: 255,
-    b: 255,
-    a: 0,
-  },
-  10: {
-    r: 255,
-    g: 255,
-    b: 255,
-    a: 0,
-  },
-  30: {
-    r: 0,
-    g: 0,
-    b: 255,
-    a: 200,
-  },
-  70: {
-    r: 255,
-    g: 255,
-    b: 0,
-    a: 200,
-  },
-  100: {
-    r: 255,
-    g: 0,
-    b: 0,
-    a: 200,
-  },
-});
-
-const getColorByPercent = (percent) => {
-  let lastColor = colors[0][1];
-  let nextColor = colors[0][1];
-  let nextPercent = -1;
-
-  if (percent !== 0) {
-    console
-  }
-
-  colors.forEach(([percentString, color]) => {
-    const currentPercent = parseInt(percentString, 10);
-
-    if (currentPercent <= percent) {
-      lastColor = color;
-    }
-
-    if (nextPercent < percent) {
-      nextColor = color;
-      nextPercent = currentPercent;
-    }
-  });
-
-  if (percent !== 0) {
-    console
-  }
-
-  const color = {
-    r: Math.round(getCenterBasedOnPercent(lastColor.r, nextColor.r, percent / 100)),
-    g: Math.round(getCenterBasedOnPercent(lastColor.g, nextColor.g, percent / 100)),
-    b: Math.round(getCenterBasedOnPercent(lastColor.b, nextColor.b, percent / 100)),
-    a: Math.round(getCenterBasedOnPercent(lastColor.a, nextColor.a, percent / 100)),
-  };
-  return color;
-}
-
+/**
+ * @param {number} number
+ * @param {number} amount
+ * @returns {string}
+ */
 const toHex = (number, amount = 2) => {
   const hexNumber = number.toString(16);
 
   return '0'.repeat(amount - hexNumber.length) + hexNumber;
 }
 
+const getColorPalette = (config) => {
+  const canvas = createCanvas(101, 1);
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 101, 1);
+  let colorPalette = [];
+
+  Object.entries(config.colors).forEach(([percentString, color]) => {
+    const percent = parseInt(percentString, 10);
+
+    const colorr = '#' + toHex(color.r) + toHex(color.g) + toHex(color.b) + toHex(color.a);
+
+    gradient.addColorStop(percent / 100, colorr);
+  });
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 101, 1);
+
+  for (let i = 0; i < 101; i++) {
+    const currentCanvas = createCanvas(1, 1);
+    const currentCtx = currentCanvas.getContext('2d');
+
+    currentCtx.drawImage(canvas, -i, 0);
+
+    colorPalette.push(currentCanvas);
+  }
+
+  return colorPalette;
+}
+
+/**
+ * @returns Canvas
+ */
 const heatmap = async (inConfig) => {
   const config = {
     ...defaultConfig,
     ...inConfig,
   };
 
-  let highestVal = 0;
+  let highestVal = 1;
   const maxAmounOfReachableSquares = Math.ceil(config.radius / config.squareSize) + 1;
-  const squares = Array(Math.ceil(config.height / config.squareSize)).fill(0).map(() => Array(Math.ceil(config.height / config.squareSize)).fill(0))
+  const maxAwayFromCenter = maxAmounOfReachableSquares * 2;
+  const squaresWidth = Math.ceil(config.width / config.squareSize);
+  const squaresHeight = Math.ceil(config.height / config.squareSize);
+  const squares = Array(squaresHeight).fill(0).map(() => Array(squaresWidth).fill(0))
 
   const canvas = createCanvas(config.width, config.height);
   const ctx = canvas.getContext('2d');
@@ -120,24 +131,30 @@ const heatmap = async (inConfig) => {
     return canvas;
   }
 
-  config.positions.forEach((pos) => {
+  const colorPalette = getColorPalette(config);
+
+  config.positions.forEach((pos, index) => {
     const centerSquare = {
       x: Math.floor(pos.x / config.squareSize),
       y: Math.floor(pos.y / config.squareSize),
     };
 
     const begin = {
-      x: centerSquare.x - maxAmounOfReachableSquares,
-      y: centerSquare.y - maxAmounOfReachableSquares,
+      x: Math.max(centerSquare.x - maxAmounOfReachableSquares, 0),
+      y: Math.max(centerSquare.y - maxAmounOfReachableSquares, 0),
     }
 
     const end = {
-      x: centerSquare.x + maxAmounOfReachableSquares,
-      y: centerSquare.y + maxAmounOfReachableSquares,
+      x: Math.min(centerSquare.x + maxAmounOfReachableSquares, squaresWidth),
+      y: Math.min(centerSquare.y + maxAmounOfReachableSquares, squaresHeight),
     }
 
     for (let squareX = begin.x; squareX < end.x; squareX++) {
       for (let squareY = begin.y; squareY < end.y; squareY++) {
+        const awayFromCenter = Math.abs(centerSquare.x - squareX) + Math.abs(centerSquare.y - squareY);
+        const awayFromCenterPercentage = awayFromCenter / maxAwayFromCenter;
+        const weight = getCenterBasedOnPercent(config.maxWeight, config.minWeight, awayFromCenterPercentage);
+
         const centerPos = {
           x: squareX * config.squareSize + config.squareSize / 2,
           y: squareY * config.squareSize + config.squareSize / 2,
@@ -145,8 +162,8 @@ const heatmap = async (inConfig) => {
 
         const distance = get2DDistance(centerPos, pos);
 
-        if (squares[squareX] && squares[squareX][squareY] !== undefined && distance < config.radius) {
-          squares[squareX][squareY] += 1;
+        if (distance < config.radius) {
+          squares[squareX][squareY] += weight;
 
           if (squares[squareX][squareY] > highestVal) {
             highestVal = squares[squareX][squareY];
@@ -158,13 +175,17 @@ const heatmap = async (inConfig) => {
 
   squares.forEach((row, x) => {
     row.forEach((value, y) => {
-      const color = getColorByPercent(Math.round(value / highestVal * 100));
+      const color = colorPalette[~~(value / highestVal * 100)];
 
-      ctx.fillStyle = '#' + toHex(color.r) + toHex(color.g) + toHex(color.b) + toHex(color.a);
-
-      ctx.fillRect(x * config.squareSize, y * config.squareSize, config.squareSize, config.squareSize);
+      ctx.drawImage(color, x * config.squareSize, y * config.squareSize, config.squareSize, config.squareSize);
     });
   });
+
+  if (config.debug) {
+    colorPalette.forEach((color, index) => {
+      ctx.drawImage(color, 0, index * 20, 20, 20);
+    });
+  }
 
   return canvas;
 };
