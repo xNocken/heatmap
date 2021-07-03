@@ -10,6 +10,7 @@ const defaultConfig = {
   maxWeight: 5,
   minWeight: 1,
   debug: false,
+  centerOfImage: null,
   colors: {
     0: {
       r: 0,
@@ -124,8 +125,17 @@ const heatmap = async (inConfig) => {
   const ctx = canvas.getContext('2d');
 
   const background = await loadImage(config.backgroundPath);
+  let xPos = 0;
+  let yPos = 0;
 
-  ctx.drawImage(background, 0, 0, config.width, config.height);
+  if (config.centerOfImage) {
+    xPos = config.centerOfImage.x - (config.width / 2);
+    yPos = config.centerOfImage.y - (config.height / 2);
+
+    ctx.drawImage(background, -xPos ,-yPos, background.width, background.height);
+  } else {
+    ctx.drawImage(background, 0, 0, config.width, config.height);
+  }
 
   if (!config.positions.length) {
     return canvas;
@@ -133,10 +143,10 @@ const heatmap = async (inConfig) => {
 
   const colorPalette = getColorPalette(config);
 
-  config.positions.forEach((pos, index) => {
+  config.positions.forEach((pos) => {
     const centerSquare = {
-      x: Math.floor(pos.x / config.squareSize),
-      y: Math.floor(pos.y / config.squareSize),
+      x: Math.floor((pos.x - xPos) / config.squareSize),
+      y: Math.floor((pos.y - yPos) / config.squareSize),
     };
 
     const begin = {
@@ -160,7 +170,10 @@ const heatmap = async (inConfig) => {
           y: squareY * config.squareSize + config.squareSize / 2,
         };
 
-        const distance = get2DDistance(centerPos, pos);
+        const distance = get2DDistance(centerPos, {
+          x: pos.x - xPos, 
+          y: pos.y - yPos, 
+        });
 
         if (distance < config.radius) {
           squares[squareX][squareY] += weight;
