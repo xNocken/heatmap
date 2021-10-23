@@ -1,5 +1,7 @@
 const { createCanvas, loadImage } = require('canvas');
 
+const backgroundImageCache = {};
+
 const defaultConfig = {
   width: 1000,
   height: 1000,
@@ -124,7 +126,11 @@ const heatmap = async (inConfig) => {
   const canvas = createCanvas(config.width, config.height);
   const ctx = canvas.getContext('2d');
 
-  const background = await loadImage(config.backgroundPath);
+  if (!backgroundImageCache[config.backgroundPath]) {
+    backgroundImageCache[config.backgroundPath] = loadImage(config.backgroundPath);
+  }
+
+  const background = await backgroundImageCache[config.backgroundPath];
   let xPos = 0;
   let yPos = 0;
 
