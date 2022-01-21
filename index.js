@@ -78,7 +78,7 @@ const toHex = (number, amount = 2) => {
   return '0'.repeat(amount - hexNumber.length) + hexNumber;
 }
 
-const getColorPalette = (config) => {
+const getColorPalette = async (config) => {
   const canvas = createCanvas(101, 1);
   const ctx = canvas.getContext('2d');
   const gradient = ctx.createLinearGradient(0, 0, 101, 1);
@@ -107,10 +107,7 @@ const getColorPalette = (config) => {
   return colorPalette;
 }
 
-/**
- * @returns Canvas
- */
-const heatmap = async (inConfig) => {
+const heatmap = (inConfig) => {
   const config = {
     ...defaultConfig,
     ...inConfig,
@@ -123,90 +120,120 @@ const heatmap = async (inConfig) => {
   const squaresHeight = Math.ceil(config.height / config.squareSize);
   const squares = Array(squaresHeight).fill(0).map(() => Array(squaresWidth).fill(0))
 
-  const canvas = createCanvas(config.width, config.height);
-  const ctx = canvas.getContext('2d');
-
   if (!backgroundImageCache[config.backgroundPath]) {
     backgroundImageCache[config.backgroundPath] = loadImage(config.backgroundPath);
   }
 
-  const background = await backgroundImageCache[config.backgroundPath];
   let xPos = 0;
   let yPos = 0;
 
   if (config.centerOfImage) {
     xPos = config.centerOfImage.x - (config.width / 2);
     yPos = config.centerOfImage.y - (config.height / 2);
-
-    ctx.drawImage(background, -xPos ,-yPos, background.width, background.height);
-  } else {
-    ctx.drawImage(background, 0, 0, config.width, config.height);
-  }
-
-  if (!config.positions.length) {
-    return canvas;
   }
 
   const colorPalette = getColorPalette(config);
 
-  config.positions.forEach((pos) => {
-    const centerSquare = {
-      x: Math.floor((pos.x - xPos) / config.squareSize),
-      y: Math.floor((pos.y - yPos) / config.squareSize),
-    };
+  const addPositions = (positions) => {
+    const optimizedPositions = {};
 
-    const begin = {
-      x: Math.max(centerSquare.x - maxAmounOfReachableSquares, 0),
-      y: Math.max(centerSquare.y - maxAmounOfReachableSquares, 0),
-    }
+    positions.forEach(({ x, y }) => {
+      const squareX = Math.floor((x - xPos) / config.squareSize);
+      const squareY = Math.floor((y - yPos) / config.squareSize);
 
-    const end = {
-      x: Math.min(centerSquare.x + maxAmounOfReachableSquares, squaresWidth),
-      y: Math.min(centerSquare.y + maxAmounOfReachableSquares, squaresHeight),
-    }
+      if (squareX < 0 || squareX >= squaresWidth || squareY < 0 || squareY >= squaresHeight) {
+        return;
+      }
 
-    for (let squareX = begin.x; squareX < end.x; squareX++) {
-      for (let squareY = begin.y; squareY < end.y; squareY++) {
-        const awayFromCenter = Math.abs(centerSquare.x - squareX) + Math.abs(centerSquare.y - squareY);
-        const awayFromCenterPercentage = awayFromCenter / maxAwayFromCenter;
-        const weight = getCenterBasedOnPercent(config.maxWeight, config.minWeight, awayFromCenterPercentage);
+      const string = `${squareX}.${squareY}`;
 
-        const centerPos = {
-          x: squareX * config.squareSize + config.squareSize / 2,
-          y: squareY * config.squareSize + config.squareSize / 2,
-        };
+      if (!optimizedPositions[string]) {
+        optimizedPositions[string] = {
+          x, y,
+          squareX,
+          squareY,
+          count: 1,
+        }
 
-        const distance = get2DDistance(centerPos, {
-          x: pos.x - xPos, 
-          y: pos.y - yPos, 
-        });
+        return;
+      }
 
-        if (distance < config.radius) {
-          squares[squareX][squareY] += weight;
+      optimizedPositions[string].count += 1;
+    })
 
-          if (squares[squareX][squareY] > highestVal) {
-            highestVal = squares[squareX][squareY];
+    Object.values(optimizedPositions).forEach((pos) => {
+      const begin = {
+        x: Math.max(pos.squareX - maxAmounOfReachableSquares, 0),
+        y: Math.max(pos.squareY - maxAmounOfReachableSquares, 0),
+      }
+
+      const end = {
+        x: Math.min(pos.squareX + maxAmounOfReachableSquares, squaresWidth),
+        y: Math.min(pos.squareY + maxAmounOfReachableSquares, squaresHeight),
+      }
+
+      for (let squareX = begin.x; squareX < end.x; squareX++) {
+        for (let squareY = begin.y; squareY < end.y; squareY++) {
+          const awayFromCenter = Math.abs(pos.squareX - squareX) + Math.abs(pos.squareY - squareY);
+          const awayFromCenterPercentage = awayFromCenter / maxAwayFromCenter;
+          const weight = getCenterBasedOnPercent(config.maxWeight, config.minWeight, awayFromCenterPercentage);
+
+          const centerPos = {
+            x: squareX * config.squareSize + config.squareSize / 2,
+            y: squareY * config.squareSize + config.squareSize / 2,
+          };
+
+          const distance = get2DDistance(centerPos, {
+            x: pos.x - xPos,
+            y: pos.y - yPos,
+          });
+
+          if (distance < config.radius) {
+            squares[squareX][squareY] += weight * pos.count;
+
+            if (squares[squareX][squareY] > highestVal) {
+              highestVal = squares[squareX][squareY];
+            }
           }
         }
       }
-    }
-  });
-
-  squares.forEach((row, x) => {
-    row.forEach((value, y) => {
-      const color = colorPalette[~~(value / highestVal * 100)];
-
-      ctx.drawImage(color, x * config.squareSize, y * config.squareSize, config.squareSize, config.squareSize);
-    });
-  });
-
-  if (config.debug) {
-    colorPalette.forEach((color, index) => {
-      ctx.drawImage(color, 0, index * 20, 20, 20);
     });
   }
 
-  return canvas;
+  const drawHeatmap = async () => {
+    const thePalette = await colorPalette;
+    const canvas = createCanvas(config.width, config.height);
+    const ctx = canvas.getContext('2d');
+
+    const background = await backgroundImageCache[config.backgroundPath];
+
+    if (config.centerOfImage) {
+      ctx.drawImage(background, -xPos, -yPos, background.width, background.height);
+    } else {
+      ctx.drawImage(background, 0, 0, config.width, config.height);
+    }
+
+    squares.forEach((row, x) => {
+      row.forEach((value, y) => {
+        const color = thePalette[~~(value / highestVal * 100)];
+
+        ctx.drawImage(color, x * config.squareSize, y * config.squareSize, config.squareSize, config.squareSize);
+      });
+    });
+
+    if (config.debug) {
+      thePalette.forEach((color, index) => {
+        ctx.drawImage(color, 0, index * 20, 20, 20);
+      });
+    }
+
+    return canvas;
+  }
+
+  return {
+    addPositions,
+    drawHeatmap,
+  };
 };
 
 module.exports = heatmap;
